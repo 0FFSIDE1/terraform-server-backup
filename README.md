@@ -1,64 +1,161 @@
-EC2 Instance Tag
+# Terraform Server Backup
 
-Your EC2 instance must include:
+Production-oriented Terraform for protecting EC2 workloads with encrypted AWS Backup recovery points and optional Amazon Data Lifecycle Manager (DLM) AMIs.
 
-tags = {
-  Name    = "production-api"
-  Backup  = "Enabled"
+## Architecture
+
+```mermaid
+flowchart TD
+  O[Operator / CI] --> T[Terraform]
+  T --> K[KMS customer-managed key]
+  T --> R[AWS Backup IAM role]
+  T --> V[Encrypted backup vault]
+  T --> P[AWS Backup plan]
+  T --> S[Backup selections]
+  T --> D[DLM AMI policy]
+  K --> V
+  R --> S
+  P --> V
+  S --> E[EC2 instances tagged Backup=Enabled]
+  D --> E
+  D --> A[Daily AMIs retained by count]
+  V --> RP[Daily / weekly / monthly recovery points]
+```
+
+## Features
+
+- Customer-managed KMS encryption for AWS Backup vault recovery points.
+- Daily, weekly, and monthly AWS Backup schedules with configurable retention.
+- Tag-based EC2 backup selection plus backward-compatible optional explicit instance ARN selection.
+- Optional DLM daily AMI policy for rapid instance launch recovery.
+- Provider default tags for consistent ownership, environment, and backup metadata.
+- Defensive variable validation and documented outputs.
+
+## AWS services used
+
+AWS Backup, AWS KMS, IAM, Amazon EC2, EBS snapshots, and Amazon Data Lifecycle Manager.
+
+## Requirements
+
+- Terraform `>= 1.9.0`.
+- AWS provider `>= 6.0.0, < 7.0.0`; HashiCorp Registry reported `6.54.0` as latest on July 17, 2026.
+- AWS CLI v2 for operational restore commands.
+- AWS credentials with permission to manage Backup, KMS, IAM, and DLM resources.
+
+## Repository structure
+
+| File | Purpose |
+| --- | --- |
+| `providers.tf` | Terraform and AWS provider constraints/configuration. |
+| `variables.tf` | Public input interface and validation. |
+| `tags.tf` | Common tags and backup tag contract. |
+| `kms.tf` | Customer-managed backup KMS key and alias. |
+| `iam.tf` | AWS Backup and optional DLM service roles. |
+| `backup.tf` | Backup vault, plan, and selections. |
+| `dlm.tf` | Optional daily AMI lifecycle policy. |
+| `outputs.tf` | Operational outputs for restore and audit workflows. |
+
+## Quick start
+
+```hcl
+aws_region  = "us-east-1"
+project     = "production-api"
+environment = "prod"
+
+additional_tags = {
+  Owner      = "platform"
+  CostCenter = "1234"
 }
+```
 
-This tag allows the DLM policy to automatically discover and create AMIs.
+Tag EC2 instances that should be protected:
 
-Deployment
+```hcl
+tags = {
+  Name   = "production-api"
+  Backup = "Enabled"
+}
+```
 
-Initialize Terraform:
+Deploy:
 
+```bash
 terraform init
-
-Review the changes:
-
+terraform fmt -recursive
+terraform validate
 terraform plan
-
-Apply the configuration:
-
 terraform apply
+```
 
-After deployment:
+## Authentication
 
-AWS Backup will create scheduled EBS backups (daily, weekly, and monthly) according to the plan.
-DLM will automatically create a daily AMI of tagged EC2 instances and retain the most recent 14 images.
-Restoring from AWS Backup
-Open the AWS Console.
-Go to AWS Backup.
-Select Protected Resources.
-Choose your EC2 instance.
-Select a recovery point.
-Click Restore.
-Review the restore settings and start the restore job.
-Disaster Recovery Using an AMI
-Open EC2 Console.
-Select AMIs.
-Choose the latest AMI created by DLM.
-Click Launch Instance from AMI.
-Select:
-Instance type
-VPC
-Subnet
-Security groups
-IAM role
-Key pair
-Launch the instance.
-Reassociate any Elastic IPs if required.
-Verify that your application starts correctly and passes health checks.
-Update your load balancer target group or DNS to direct traffic to the restored instance.
-Production Best Practices
-Encrypt backups with a customer-managed KMS key.
-Enable KMS key rotation.
-Use lifecycle policies to expire old backups automatically.
-Tag all production instances consistently (for example, Backup=Enabled).
-Test restoration procedures regularly rather than assuming backups are usable.
-Consider copying backups to a secondary AWS Region or account for protection against regional outages.
-Store Terraform state remotely (for example, in an S3 backend with DynamoDB state locking).
-Monitor AWS Backup and DLM jobs with Amazon CloudWatch and configure alerts for failed backup or restore operations.
+Use standard AWS provider authentication: environment variables, AWS SSO profiles, EC2 instance profiles, or CI/CD OIDC roles. Do not store AWS access keys in this repository.
 
-This design follows common AWS production practices by separating backup management (AWS Backup) from machine-image disaster recovery (DLM-managed AMIs), providing both operational backups and rapid recovery options.
+## Remote backend
+
+This root module intentionally does not hard-code a backend. For production, use an encrypted and access-controlled remote backend such as S3 with state locking or HCP Terraform. Example partial backend file:
+
+```hcl
+terraform {
+  backend "s3" {
+    bucket         = "my-terraform-state"
+    key            = "terraform-server-backup/prod.tfstate"
+    region         = "us-east-1"
+    encrypt        = true
+    dynamodb_table = "terraform-locks"
+  }
+}
+```
+
+## Variables and outputs
+
+See `VARIABLE_REFERENCE.md` and `OUTPUT_REFERENCE.md` for the maintained contract.
+
+## Backup strategy
+
+AWS Backup creates encrypted recovery points in one vault on three schedules: daily, weekly, and monthly. DLM creates AMIs daily when enabled. AWS Backup is the primary recovery-point system; DLM AMIs optimize rapid EC2 relaunch scenarios.
+
+## Disaster recovery and restore
+
+1. Confirm the desired recovery point or AMI exists.
+2. Restore from AWS Backup for point-in-time recovery or launch the latest DLM AMI for rapid recovery.
+3. Reattach required networking, IAM instance profile, security groups, DNS, and load balancer targets.
+4. Validate application health before shifting production traffic.
+
+## Destroy
+
+`terraform destroy` removes IAM roles, backup plans, selections, vault metadata, and DLM policies. The KMS key uses `prevent_destroy` to reduce accidental loss of recovery capability; remove this lifecycle guard only after confirming no required recovery points depend on the key.
+
+## Security
+
+- No hardcoded secrets are required or included.
+- Backups are encrypted with a customer-managed KMS key and rotation enabled.
+- IAM trust policies are service-principal scoped.
+- Terraform state must be stored in an encrypted backend with least-privilege access.
+- Review AWS-managed IAM policies for compliance-sensitive environments.
+
+## Cost considerations
+
+Costs come primarily from AWS Backup warm storage, EBS snapshots backing AMIs, KMS requests, and restore testing. Retention periods and AMI retention count directly influence cost.
+
+## Logging and monitoring
+
+Monitor AWS Backup jobs, DLM policy executions, KMS key state, and CloudTrail `AssumeRole` events. Configure CloudWatch/EventBridge alerts for failed backup, copy, and restore jobs.
+
+## Troubleshooting
+
+- No backups: verify `Backup=Enabled` is present on target EC2 instances and in the same Region.
+- KMS errors: confirm AWS Backup can use the configured key and the key is enabled.
+- DLM missing AMIs: confirm `enable_dlm_ami_backups = true` and the EC2 instance tag is exact.
+- Terraform plan auth failures: run `aws sts get-caller-identity` with the same profile used by Terraform.
+
+## Contributing and license
+
+See `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, and `LICENSE`.
+
+## References
+
+- AWS Backup documentation: https://docs.aws.amazon.com/aws-backup/
+- Amazon DLM documentation: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/snapshot-lifecycle.html
+- Terraform AWS provider documentation: https://registry.terraform.io/providers/hashicorp/aws/latest/docs
+- Terraform language documentation: https://developer.hashicorp.com/terraform/language
