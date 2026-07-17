@@ -151,7 +151,7 @@ Monitor AWS Backup jobs, DLM policy executions, KMS key state, and CloudTrail `A
 
 ## Contributing and license
 
-See `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, and `LICENSE`.
+See `CODE_OF_CONDUCT.md` and `LICENSE`.
 
 ## References
 

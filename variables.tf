@@ -3,7 +3,6 @@
 # Outputs: Variables are consumed by providers.tf, tags.tf, kms.tf, iam.tf, backup.tf, dlm.tf, and outputs.tf.
 # Resources: None; this file defines the public interface for the root module.
 # Dependencies: Validation rules keep downstream AWS APIs from receiving malformed values.
-# Examples: See EXAMPLES.md and VARIABLE_REFERENCE.md for production-ready input sets.
 # Warnings: Do not commit real account IDs, resource ARNs for private systems, access keys, or secrets in tfvars files.
 # Requirements: Terraform 1.x variable validation syntax.
 
