@@ -1,0 +1,7 @@
+project_name = "my_project_name"
+
+environment = "production"
+
+aws_region = "eu-west-1"
+
+backup_retention_days = 35
