@@ -1,6 +1,6 @@
 # Terraform Server Backup
 
-A beginner-friendly, production-oriented Terraform project that creates an encrypted AWS Backup solution for Amazon EC2 workloads and, optionally, scheduled Amazon Machine Images (AMIs) with Amazon Data Lifecycle Manager (DLM).
+A production oriented Terraform project that creates an encrypted AWS Backup solution for Amazon EC2 workloads and, optionally, scheduled Amazon Machine Images (AMIs) with Amazon Data Lifecycle Manager (DLM).
 
 This README assumes you are starting from zero. It explains AWS, Terraform, credentials, permissions, deployment, verification, backup operations, restore operations, disaster recovery, and troubleshooting.
 
